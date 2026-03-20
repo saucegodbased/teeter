@@ -1,40 +1,65 @@
-# Plan: Control Fixes
+# Plan: Fixed Track with Direct Ball Movement
 
 ## Problem Analysis
 
-### Issue 1: Lateral tilt is inverted
-**Root cause**: The webcam produces a mirrored (selfie) image. When the user tilts their head physically to the right, the webcam shows the right eye going *down* relative to the left eye. The `atan2` in `tracker.js:53` computes a positive tilt angle for this case. This positive tilt feeds into `physics.js:39` as `GRAVITY * Math.sin(tiltAngle) * SENSITIVITY`, producing positive lateral acceleration (moving the ball to the right in world space). However, because the webcam is mirrored, a physical rightward tilt appears as a leftward tilt in the video — the math is correct for the mirrored image but wrong for the user's physical perspective.
+The current implementation has two related issues that make it feel like the track is tilting rather than the ball moving independently:
 
-**Fix**: Negate the raw tilt value in `tracker.js` by flipping the sign: `rawTilt = -Math.atan2(...)`. This mirrors the horizontal mapping so physical right tilt → ball moves right.
+### Issue 1: Track visually tilts
+**Root cause**: `renderer.js:113-117` contains `updateTrackTilt()` which rotates the `trackGroup` based on head tilt angle. This creates a visual tilting effect that makes the track appear to tilt rather than the ball moving on a fixed surface.
 
-### Issue 2: Camera perspective and forward motion direction
-**Root cause**: The ball starts at `z = -20` and moves in the `+z` direction (`vz = FORWARD_SPEED = 2.0`). The camera is positioned at `z = ballZ + 8` (i.e., at `z = -12` when ball is at `z = -20`), looking toward the ball. Since the ball moves toward `+z` and the camera is at `+z` relative to ball, the ball moves *toward* the camera — i.e., toward the player.
+**Current code** (`renderer.js:113-117`):
+```js
+export function updateTrackTilt(tiltAngle) {
+  const maxVisualTilt = 0.15;
+  trackGroup.rotation.z = Math.max(-maxVisualTilt, Math.min(maxVisualTilt, tiltAngle * 0.5));
+}
+```
 
-**Fix**: Reposition the camera *behind* the ball in the `-z` direction. Change camera offset from `+8` to `-8` on z-axis:
-- `camera.position.z = ballZ - 8` (camera is behind ball)
-- `camera.lookAt(0, 0, ballZ)` (still looks at ball)
+**Fix**: Remove all track tilting. The `updateTrackTilt` function should be removed, and the `trackGroup` should never have its rotation changed. Remove all calls to `updateTrackTilt` in `main.js`.
 
-This means the ball moves away from the camera (away from the player) in the `+z` direction. The initial camera position in `initRenderer` also needs to change from `BALL_START_Z + 8` to `BALL_START_Z - 8`.
+### Issue 2: Lateral movement uses gravity-on-slope model
+**Root cause**: `physics.js:41` computes lateral acceleration as `GRAVITY * Math.sin(tiltAngle) * SENSITIVITY`, simulating a ball rolling on a tilted surface. Combined with the visual tilt, this reinforces the "tilting track" feel. The task wants **direct** control: head tilt directly controls the ball's lateral velocity.
 
-### Issue 2b: Forward tilt controls speed
-**Root cause**: Currently, only lateral tilt (roll) is detected. There's no pitch detection.
+**Current code** (`physics.js:41-45`):
+```js
+const ax = GRAVITY * Math.sin(tiltAngle) * SENSITIVITY;
+ball.vx += ax * dt;
+ball.vx *= (1 - FRICTION * dt);
+```
 
-**Fix**: Add pitch detection to `tracker.js` using face landmarks. Use the nose tip (landmark 1) and forehead (landmark 10) to compute pitch angle. Tilting forward (head down, nose closer to camera) should increase speed; tilting backward (head up) should decrease speed.
+**Fix**: Replace with direct velocity mapping:
+```js
+const targetVx = tiltAngle * DIRECT_SENSITIVITY;
+ball.vx += (targetVx - ball.vx) * RESPONSE_RATE * dt;
+```
+This gives immediate, proportional control with smooth interpolation. The ball's lateral speed is directly proportional to head tilt angle, with smoothing to prevent jerky movement.
 
-Export a `detectPitch` function from `tracker.js`. In `physics.js`, make `vz` responsive to pitch:
-- Base speed: `FORWARD_SPEED = 2.0`
-- Pitch modulates speed: `vz = FORWARD_SPEED * (1 + pitch * PITCH_SENSITIVITY)`
-- Clamp to `[0, maxSpeed]` so the ball doesn't go backward or too fast
+## Changes Required
 
-Wire pitch through `main.js` into `updatePhysics`.
+### File 1: `js/renderer.js`
+- Remove `updateTrackTilt()` function body — make it a no-op or remove entirely
+- Remove `trackGroup` wrapper — add track meshes directly to `scene` since no rotation is needed
+- Remove `updateTrackTilt` from exports
 
-## Files to Change
+### File 2: `js/physics.js`
+- Replace gravity-on-slope lateral model with direct velocity mapping
+- Use interpolation toward a target velocity for smooth feel
+- Tune `DIRECT_SENSITIVITY` to give responsive but controllable lateral movement
 
-1. **`js/tracker.js`** — Negate tilt sign, add pitch detection and smoothing
-2. **`js/physics.js`** — Accept pitch parameter, modulate forward speed based on pitch
-3. **`js/renderer.js`** — Flip camera to behind the ball (change `+8` to `-8`)
-4. **`js/main.js`** — Wire pitch from tracker to physics
+### File 3: `js/main.js`
+- Remove `updateTrackTilt` import and all calls to it
+- Everything else (pitch wiring, reset logic) stays the same
+
+## Key Design Decisions
+
+1. **Direct velocity with interpolation** vs **direct position mapping**: Using velocity with interpolation (`ball.vx lerps toward tiltAngle * sensitivity`) gives smooth, responsive control while still feeling like a physical ball. Pure position mapping would lose the rolling/momentum feel.
+
+2. **Remove trackGroup entirely**: Since there's no more visual tilt, the group serves no purpose. Simplifying the scene graph by adding track meshes directly to the scene.
+
+3. **Keep existing pitch control**: Forward speed modulation via head pitch already works correctly from the prior PR.
+
+4. **Keep ball rolling visuals and edge-fall physics**: These match the task description ("rolling physics with momentum and friction", "falls off edge → reset").
 
 ## Scope Assessment
 
-This is a **single** agent task. All changes are tightly coupled (tracker feeds physics feeds renderer), and the total diff is small (< 40 lines changed across 4 files).
+**Single agent** — all changes are tightly coupled across 3 files with a total diff of ~20 lines. No independent modules to parallelize.
