@@ -103,6 +103,64 @@ function generateCoins(rng, obstacles) {
   return coins;
 }
 
+// Shared geometry and materials for obstacles and coins
+const obstGeo = new THREE.BoxGeometry(OBSTACLE_WIDTH, OBSTACLE_HEIGHT, OBSTACLE_DEPTH);
+const obstMat = new THREE.MeshStandardMaterial({
+  color: 0x8B2222,
+  roughness: 0.5,
+  metalness: 0.2,
+});
+const coinGeo = new THREE.TorusGeometry(COIN_RADIUS, COIN_TUBE, 12, 24);
+const coinMat = new THREE.MeshStandardMaterial({
+  color: 0xFFD700,
+  metalness: 0.8,
+  roughness: 0.2,
+  emissive: 0x554400,
+  emissiveIntensity: 0.3,
+});
+
+function generateLevel() {
+  const rng = seededRandom(Date.now());
+  obstacleData = generateObstacles(rng);
+  coinData = generateCoins(rng, obstacleData);
+
+  obstacleMeshes = obstacleData.map((o) => {
+    const mesh = new THREE.Mesh(obstGeo, obstMat);
+    mesh.position.set(o.x, TRACK_HEIGHT / 2 + OBSTACLE_HEIGHT / 2, o.z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    return mesh;
+  });
+
+  coinMeshes = coinData.map((c) => {
+    const mesh = new THREE.Mesh(coinGeo, coinMat);
+    mesh.position.set(c.x, COIN_Y, c.z);
+    mesh.rotation.x = Math.PI / 2;
+    scene.add(mesh);
+    return mesh;
+  });
+}
+
+export function regenerateLevel() {
+  // Remove old obstacle meshes from scene
+  for (const mesh of obstacleMeshes) {
+    scene.remove(mesh);
+  }
+  obstacleMeshes = [];
+  obstacleData = [];
+
+  // Remove old coin meshes from scene
+  for (const mesh of coinMeshes) {
+    scene.remove(mesh);
+  }
+  coinMeshes = [];
+  coinData = [];
+
+  // Generate fresh layout
+  generateLevel();
+}
+
 export function initRenderer() {
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x87CEEB);
@@ -173,43 +231,8 @@ export function initRenderer() {
   ballMesh.position.set(0, TRACK_HEIGHT / 2 + BALL_RADIUS, BALL_START_Z);
   scene.add(ballMesh);
 
-  // Generate obstacles and coins
-  const rng = seededRandom(42);
-  obstacleData = generateObstacles(rng);
-  coinData = generateCoins(rng, obstacleData);
-
-  // Create obstacle meshes
-  const obstGeo = new THREE.BoxGeometry(OBSTACLE_WIDTH, OBSTACLE_HEIGHT, OBSTACLE_DEPTH);
-  const obstMat = new THREE.MeshStandardMaterial({
-    color: 0x8B2222,
-    roughness: 0.5,
-    metalness: 0.2,
-  });
-  obstacleMeshes = obstacleData.map((o) => {
-    const mesh = new THREE.Mesh(obstGeo, obstMat);
-    mesh.position.set(o.x, TRACK_HEIGHT / 2 + OBSTACLE_HEIGHT / 2, o.z);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    scene.add(mesh);
-    return mesh;
-  });
-
-  // Create coin meshes
-  const coinGeo = new THREE.TorusGeometry(COIN_RADIUS, COIN_TUBE, 12, 24);
-  const coinMat = new THREE.MeshStandardMaterial({
-    color: 0xFFD700,
-    metalness: 0.8,
-    roughness: 0.2,
-    emissive: 0x554400,
-    emissiveIntensity: 0.3,
-  });
-  coinMeshes = coinData.map((c) => {
-    const mesh = new THREE.Mesh(coinGeo, coinMat);
-    mesh.position.set(c.x, COIN_Y, c.z);
-    mesh.rotation.x = Math.PI / 2; // Face upright initially
-    scene.add(mesh);
-    return mesh;
-  });
+  // Generate initial level layout
+  generateLevel();
 
   // Handle resize
   window.addEventListener('resize', onResize);

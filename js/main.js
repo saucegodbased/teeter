@@ -11,6 +11,7 @@ import {
   hideCoin,
   showAllCoins,
   updateCoinRotation,
+  regenerateLevel,
 } from './renderer.js';
 
 import { initTracker, detectTilt, detectPitch, resetTilt } from './tracker.js';
@@ -120,12 +121,14 @@ function gameLoop(timestamp) {
     if (result.needsReset && state === 'falling') {
       if (!resetTimer) {
         resetTimer = setTimeout(() => {
-          resetBall();
+          regenerateLevel();
+          const config = getTrackConfig();
+          config.obstacles = getObstacles();
+          config.coins = getCoins();
+          initPhysics(config);
           resetTilt();
           resetBallRotation();
-          showAllCoins();
           updateScore(0);
-          const config = getTrackConfig();
           updateBallPosition(0, config.trackHeight / 2 + config.ballRadius, config.ballStartZ);
           updateCamera(config.ballStartZ);
           state = 'playing';
