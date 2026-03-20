@@ -1,14 +1,107 @@
 import * as THREE from 'three';
 
-const TRACK_WIDTH = 3;
+const TRACK_WIDTH = 4.5;
 const TRACK_HEIGHT = 0.2;
 const TRACK_LENGTH = 50;
 const BALL_RADIUS = 0.3;
 const BALL_START_Z = -20;
 
+// Obstacle config
+const OBSTACLE_WIDTH = 1.5;
+const OBSTACLE_HEIGHT = 1.0;
+const OBSTACLE_DEPTH = 0.4;
+const OBSTACLE_MIN_SPACING = 7;
+const OBSTACLE_MAX_SPACING = 9;
+const SAFE_ZONE_Z = BALL_START_Z + 5; // No obstacles/coins before Z = -15
+const MIN_GAP = 1.5; // Minimum passable gap beside obstacle
+
+// Coin config
+const COIN_RADIUS = 0.25;
+const COIN_TUBE = 0.08;
+const COIN_Y = TRACK_HEIGHT / 2 + 0.35;
+
 let scene, camera, renderer;
 let trackMesh, ballMesh;
 let edgeLeft, edgeRight;
+
+let obstacleMeshes = [];
+let obstacleData = []; // { x, z, halfW, halfD }
+let coinMeshes = [];
+let coinData = []; // { x, z }
+
+// Simple seeded RNG for deterministic placement
+function seededRandom(seed) {
+  let s = seed;
+  return function () {
+    s = (s * 16807 + 0) % 2147483647;
+    return (s - 1) / 2147483646;
+  };
+}
+
+function generateObstacles(rng) {
+  const obstacles = [];
+  const halfTrack = TRACK_WIDTH / 2;
+  const halfLength = TRACK_LENGTH / 2;
+
+  let z = SAFE_ZONE_Z;
+  while (z < halfLength - 2) {
+    const spacing = OBSTACLE_MIN_SPACING + rng() * (OBSTACLE_MAX_SPACING - OBSTACLE_MIN_SPACING);
+    z += spacing;
+    if (z >= halfLength - 1) break;
+
+    // Place obstacle so there's at least MIN_GAP on one side
+    const maxOffset = halfTrack - OBSTACLE_WIDTH / 2 - 0.1;
+    const x = (rng() * 2 - 1) * maxOffset;
+
+    obstacles.push({
+      x,
+      z,
+      halfW: OBSTACLE_WIDTH / 2,
+      halfD: OBSTACLE_DEPTH / 2,
+    });
+  }
+  return obstacles;
+}
+
+function generateCoins(rng, obstacles) {
+  const coins = [];
+  const halfTrack = TRACK_WIDTH / 2;
+
+  // Place 2-3 coins between each pair of obstacles
+  for (let i = 0; i < obstacles.length; i++) {
+    const startZ = i === 0 ? SAFE_ZONE_Z : obstacles[i - 1].z + 1;
+    const endZ = obstacles[i].z - 1;
+    const gap = endZ - startZ;
+    if (gap < 2) continue;
+
+    const count = gap >= 5 ? 3 : 2;
+    const step = gap / (count + 1);
+
+    for (let j = 1; j <= count; j++) {
+      const cz = startZ + step * j;
+      const cx = (rng() * 2 - 1) * (halfTrack - 0.5);
+      coins.push({ x: cx, z: cz });
+    }
+  }
+
+  // Coins after the last obstacle
+  if (obstacles.length > 0) {
+    const lastZ = obstacles[obstacles.length - 1].z + 1;
+    const halfLength = TRACK_LENGTH / 2;
+    const gap = halfLength - lastZ;
+    if (gap >= 3) {
+      const count = 2;
+      const step = gap / (count + 1);
+      for (let j = 1; j <= count; j++) {
+        const cz = lastZ + step * j;
+        const cx = (rng() * 2 - 1) * (halfTrack - 0.5);
+        coins.push({ x: cx, z: cz });
+      }
+    }
+  }
+
+  return coins;
+}
 
 export function initRenderer() {
   scene = new THREE.Scene();
@@ -80,6 +173,44 @@ export function initRenderer() {
   ballMesh.position.set(0, TRACK_HEIGHT / 2 + BALL_RADIUS, BALL_START_Z);
   scene.add(ballMesh);
 
+  // Generate obstacles and coins
+  const rng = seededRandom(42);
+  obstacleData = generateObstacles(rng);
+  coinData = generateCoins(rng, obstacleData);
+
+  // Create obstacle meshes
+  const obstGeo = new THREE.BoxGeometry(OBSTACLE_WIDTH, OBSTACLE_HEIGHT, OBSTACLE_DEPTH);
+  const obstMat = new THREE.MeshStandardMaterial({
+    color: 0x8B2222,
+    roughness: 0.5,
+    metalness: 0.2,
+  });
+  obstacleMeshes = obstacleData.map((o) => {
+    const mesh = new THREE.Mesh(obstGeo, obstMat);
+    mesh.position.set(o.x, TRACK_HEIGHT / 2 + OBSTACLE_HEIGHT / 2, o.z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    return mesh;
+  });
+
+  // Create coin meshes
+  const coinGeo = new THREE.TorusGeometry(COIN_RADIUS, COIN_TUBE, 12, 24);
+  const coinMat = new THREE.MeshStandardMaterial({
+    color: 0xFFD700,
+    metalness: 0.8,
+    roughness: 0.2,
+    emissive: 0x554400,
+    emissiveIntensity: 0.3,
+  });
+  coinMeshes = coinData.map((c) => {
+    const mesh = new THREE.Mesh(coinGeo, coinMat);
+    mesh.position.set(c.x, COIN_Y, c.z);
+    mesh.rotation.x = Math.PI / 2; // Face upright initially
+    scene.add(mesh);
+    return mesh;
+  });
+
   // Handle resize
   window.addEventListener('resize', onResize);
 
@@ -124,4 +255,36 @@ export function getTrackConfig() {
     ballRadius: BALL_RADIUS,
     ballStartZ: BALL_START_Z,
   };
+}
+
+export function getObstacles() {
+  return obstacleData.map((o) => ({
+    x: o.x,
+    z: o.z,
+    halfW: o.halfW,
+    halfD: o.halfD,
+    height: OBSTACLE_HEIGHT,
+  }));
+}
+
+export function getCoins() {
+  return coinData.map((c) => ({ x: c.x, z: c.z }));
+}
+
+export function hideCoin(index) {
+  if (coinMeshes[index]) {
+    coinMeshes[index].visible = false;
+  }
+}
+
+export function showAllCoins() {
+  coinMeshes.forEach((m) => { m.visible = true; });
+}
+
+export function updateCoinRotation(dt) {
+  coinMeshes.forEach((m) => {
+    if (m.visible) {
+      m.rotation.y += 2.0 * dt;
+    }
+  });
 }

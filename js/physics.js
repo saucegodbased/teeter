@@ -5,12 +5,19 @@ const FORWARD_SPEED = 2.0;
 const PITCH_SENSITIVITY = 3.0;
 const MAX_SPEED = 6.0;
 const MAX_DT = 1 / 30; // Cap delta time to prevent physics explosions
+const COIN_COLLECT_RADIUS = 0.8;
 
 let ball = {};
 let trackConfig = {};
+let obstacles = [];
+let coins = [];
+let coinsCollected = [];
 
 export function initPhysics(config) {
   trackConfig = config;
+  obstacles = config.obstacles || [];
+  coins = config.coins || [];
+  coinsCollected = new Array(coins.length).fill(false);
   resetBall();
 }
 
@@ -24,6 +31,7 @@ export function resetBall() {
     vz: FORWARD_SPEED,
     falling: false,
   };
+  coinsCollected = new Array(coins.length).fill(false);
 }
 
 export function updatePhysics(dt, tiltAngle, pitch) {
@@ -56,6 +64,39 @@ function updateOnTrack(dt, tiltAngle, pitch) {
     ball.vy = 0;
   }
 
+  // Obstacle collision — AABB check with ball radius margin
+  let obstacleHit = false;
+  if (!ball.falling) {
+    const br = trackConfig.ballRadius;
+    for (let i = 0; i < obstacles.length; i++) {
+      const o = obstacles[i];
+      if (
+        ball.x + br > o.x - o.halfW &&
+        ball.x - br < o.x + o.halfW &&
+        ball.z + br > o.z - o.halfD &&
+        ball.z - br < o.z + o.halfD
+      ) {
+        ball.falling = true;
+        ball.vy = 0;
+        obstacleHit = true;
+        break;
+      }
+    }
+  }
+
+  // Coin collection — distance check in XZ plane
+  const newlyCollected = [];
+  for (let i = 0; i < coins.length; i++) {
+    if (coinsCollected[i]) continue;
+    const dx = ball.x - coins[i].x;
+    const dz = ball.z - coins[i].z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    if (dist < COIN_COLLECT_RADIUS) {
+      coinsCollected[i] = true;
+      newlyCollected.push(i);
+    }
+  }
+
   // Track end — wrap back to start if ball reaches the end
   const halfLength = trackConfig.trackLength / 2;
   if (ball.z > halfLength) {
@@ -68,8 +109,10 @@ function updateOnTrack(dt, tiltAngle, pitch) {
     z: ball.z,
     vx: ball.vx,
     vz: ball.vz,
-    falling: false,
+    falling: ball.falling,
     needsReset: false,
+    obstacleHit,
+    coinsCollected: newlyCollected,
   };
 }
 
@@ -91,6 +134,8 @@ function updateFalling(dt) {
     vz: ball.vz,
     falling: true,
     needsReset,
+    obstacleHit: false,
+    coinsCollected: [],
   };
 }
 
