@@ -80,7 +80,7 @@ jobs:
           SHORT_ID="${TASK_ID:0:8}"
 
           PR_JSON=$(gh pr list --repo "${{ github.repository }}" --state open \
-            --json headRefName,headRepositoryOwner,headRepository \
+            --json number,headRefName,headRepositoryOwner,headRepository \
             --jq "[.[] | select(.headRefName | contains(\"${SHORT_ID}\"))][0]")
 
           if [ -z "$PR_JSON" ] || [ "$PR_JSON" = "null" ]; then
@@ -91,11 +91,14 @@ jobs:
           BRANCH=$(echo "$PR_JSON" | jq -r '.headRefName')
           OWNER=$(echo "$PR_JSON" | jq -r '.headRepositoryOwner.login')
           REPO=$(echo "$PR_JSON" | jq -r '.headRepository.name')
+          PR_NUM=$(echo "$PR_JSON" | jq -r '.number')
 
-          echo "Found branch ${BRANCH} in ${OWNER}/${REPO}"
+          echo "pr_number=${PR_NUM}" >> "$GITHUB_OUTPUT"
+          echo "Found PR #${PR_NUM}, branch ${BRANCH} in ${OWNER}/${REPO}"
           git remote add fork "https://github.com/${OWNER}/${REPO}.git" 2>/dev/null || true
           git fetch --no-tags fork "refs/heads/${BRANCH}"
           git checkout -B "$BRANCH" FETCH_HEAD
+          echo "head_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
           if [ "$BRANCH" != "$REVIEW_BRANCH" ]; then
             echo "REVIEW_BRANCH=${BRANCH}" >> "$GITHUB_ENV"
@@ -106,6 +109,62 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --no-tags origin "refs/heads/${BASE_BRANCH}:refs/remotes/origin/${BASE_BRANCH}"
+
+      - name: Wait for CI
+        id: wait_ci
+        uses: lewagon/wait-on-check-action@v1.5.0
+        with:
+          ref: ${{ steps.checkout_review.outputs.head_sha }}
+          check-name: "build"
+          repo-token: ${{ github.token }}
+          wait-interval: 10
+          allowed-conclusions: success
+
+      - name: Report CI failure
+        if: ${{ always() && steps.wait_ci.outcome == 'failure' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.checkout_review.outputs.pr_number }}
+          HEAD_SHA: ${{ steps.checkout_review.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p .contextgen/security_review
+
+          # Fetch CI failure logs (try run logs first, fall back to check output)
+          CI_LOGS="CI build failed (no details available)"
+          if [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" != "null" ]; then
+            RUN_ID=$(gh run list --repo "${{ github.repository }}" --commit "$HEAD_SHA" \
+              --workflow ci.yml --json databaseId,conclusion \
+              --jq '[.[] | select(.conclusion == "failure")][0].databaseId' 2>/dev/null || true)
+            if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
+              CI_LOGS=$(gh run view "$RUN_ID" --repo "${{ github.repository }}" --log-failed 2>/dev/null | tail -100 || echo "$CI_LOGS")
+            fi
+          fi
+
+          # Truncate to avoid argument length issues
+          CI_LOGS=$(printf '%s' "$CI_LOGS" | head -c 8000)
+
+          jq -n \
+            --arg task_id "$TASK_ID" \
+            --arg branch "$REVIEW_BRANCH" \
+            --arg base_branch "$BASE_BRANCH" \
+            --arg head_sha "$HEAD_SHA" \
+            --arg ci_logs "$CI_LOGS" \
+            '{
+              task_id: $task_id,
+              branch: $branch,
+              base_branch: $base_branch,
+              base_sha: "",
+              head_sha: $head_sha,
+              final_decision: "block",
+              average_approval_score: 0,
+              recommended_actions: [
+                ("CI build failed. Fix the following issues and resubmit:\n\n" + $ci_logs)
+              ]
+            }' > .contextgen/security_review/security_review.json
+          echo "::error::CI build failed — skipping security review"
+          exit 1
 
       - name: Resolve review range
         id: refs
