@@ -1,5 +1,5 @@
 const GRAVITY = 9.8;
-const DIRECT_SENSITIVITY = 15.0;
+const DIRECT_SENSITIVITY = 8.0;
 const RESPONSE_RATE = 6.0;
 const FORWARD_SPEED = 2.0;
 const PITCH_SENSITIVITY = 3.0;
@@ -138,11 +138,11 @@ function updateOnTrack(dt, tiltAngle, pitch) {
   }
 
   // Track end — wrap back to start if ball reaches the end
-  let trackCompleted = false;
+  let wrapped = false;
   const halfLength = trackConfig.trackLength / 2;
   if (ball.z > halfLength) {
     ball.z = -halfLength + 1;
-    trackCompleted = true;
+    wrapped = true;
   }
 
   return {
@@ -157,7 +157,7 @@ function updateOnTrack(dt, tiltAngle, pitch) {
     coinsCollected: newlyCollected,
     turtleCollected: turtleJustCollected,
     slowdownActive,
-    trackCompleted,
+    wrapped,
   };
 }
 
@@ -183,7 +183,7 @@ function updateFalling(dt) {
     coinsCollected: [],
     turtleCollected: false,
     slowdownActive,
-    trackCompleted: false,
+    wrapped: false,
   };
 }
 
