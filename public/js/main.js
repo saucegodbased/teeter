@@ -99,10 +99,10 @@ async function fetchScores() {
     if (!res.ok) throw new Error('Server error: ' + res.status);
     const data = await res.json();
     cachedScores = data.scores || [];
-    return cachedScores;
+    return { scores: cachedScores, offline: false };
   } catch (err) {
     console.error('Failed to fetch scores:', err);
-    return cachedScores;
+    return { scores: cachedScores, offline: true };
   }
 }
 
@@ -136,19 +136,25 @@ async function addScore(name, value) {
     if (data.scores) {
       cachedScores = data.scores;
     }
-    return cachedScores;
+    return { success: true };
   } catch (err) {
     console.error('Failed to submit score:', err);
-    return cachedScores;
+    return { success: false, error: err.message };
   }
 }
 
-function renderLeaderboard(scores) {
+function renderLeaderboard(scores, offline) {
   if (!scores || scores.length === 0) {
-    leaderboardList.innerHTML = '<p class="lb-empty">No scores yet.</p>';
+    leaderboardList.innerHTML = offline
+      ? '<p class="lb-empty">Could not reach server. Please try again later.</p>'
+      : '<p class="lb-empty">No scores yet.</p>';
     return;
   }
-  let html = '<table><thead><tr><th class="lb-rank">#</th><th class="lb-name">Name</th><th class="lb-score">Score</th></tr></thead><tbody>';
+  let html = '';
+  if (offline) {
+    html += '<p class="lb-empty">Could not reach server. Showing cached scores.</p>';
+  }
+  html += '<table><thead><tr><th class="lb-rank">#</th><th class="lb-name">Name</th><th class="lb-score">Score</th></tr></thead><tbody>';
   for (let i = 0; i < scores.length; i++) {
     const e = scores[i];
     const escapedName = e.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -161,8 +167,8 @@ function renderLeaderboard(scores) {
 async function showLeaderboard() {
   leaderboardList.innerHTML = '<p class="lb-empty">Loading scores...</p>';
   leaderboardPanel.classList.add('visible');
-  const scores = await fetchScores();
-  renderLeaderboard(scores);
+  const { scores, offline } = await fetchScores();
+  renderLeaderboard(scores, offline);
 }
 
 function hideLeaderboard() { leaderboardPanel.classList.remove('visible'); }
@@ -229,9 +235,13 @@ async function submitScore() {
   if (!name) name = 'Anonymous';
   nameSubmit.disabled = true;
   nameSubmit.textContent = 'Submitting...';
-  await addScore(name, finalScore);
+  const result = await addScore(name, finalScore);
   nameSubmit.disabled = false;
   nameSubmit.textContent = 'Submit';
+  if (!result.success) {
+    gameoverMessage.textContent = 'Failed to submit score. Please try again.';
+    return;
+  }
   exitGameOver();
 }
 

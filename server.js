@@ -4,6 +4,7 @@ const Database = require('better-sqlite3');
 const rateLimit = require('express-rate-limit');
 
 const app = express();
+app.disable('x-powered-by');
 const PORT = process.env.PORT || 8080;
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data', 'scores.db');
 const MAX_SCORES = 10;
@@ -11,6 +12,22 @@ const MAX_SCORES = 10;
 // Score validation constants
 const MAX_REASONABLE_SCORE = 10000;
 const MAX_NAME_LENGTH = 15;
+
+// Security: Content-Security-Policy and other headers
+app.use((req, res, next) => {
+  res.setHeader('Content-Security-Policy',
+    "default-src 'self'; " +
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; " +
+    "style-src 'self' 'unsafe-inline'; " +
+    "connect-src 'self' https://cdn.jsdelivr.net https://storage.googleapis.com; " +
+    "worker-src 'self' blob:; " +
+    "img-src 'self' data: blob:"
+  );
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
 
 // Ensure data directory exists
 const fs = require('fs');
@@ -43,9 +60,23 @@ const countScores = db.prepare('SELECT COUNT(*) as count FROM scores');
 const insertScore = db.prepare(
   'INSERT INTO scores (name, score) VALUES (?, ?)'
 );
-const pruneScores = db.prepare(
-  'DELETE FROM scores WHERE id NOT IN (SELECT id FROM scores ORDER BY score DESC LIMIT ?)'
+const deleteLowestExcess = db.prepare(
+  'DELETE FROM scores WHERE id = (SELECT id FROM scores ORDER BY score ASC, id ASC LIMIT 1)'
 );
+
+// Transactional insert-and-prune: insert new score, then remove one row at a
+// time until at most MAX_SCORES remain. This avoids a broad DELETE and limits
+// each deletion to exactly one row.
+const insertAndPrune = db.transaction((name, score) => {
+  insertScore.run(name, score);
+  const { count } = countScores.get();
+  let excess = count - MAX_SCORES;
+  while (excess > 0) {
+    const result = deleteLowestExcess.run();
+    if (result.changes === 0) break; // safety guard
+    excess--;
+  }
+});
 
 // Middleware
 app.use(express.json({ limit: '1kb' }));
@@ -59,8 +90,18 @@ const scoreSubmitLimiter = rateLimit({
   message: { error: 'Too many score submissions. Please try again later.' },
 });
 
-// Serve static files
+// Serve static files (no CORS headers — API is same-origin only)
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Reject cross-origin API requests
+app.use('/api', (req, res, next) => {
+  const origin = req.get('Origin');
+  // Allow same-origin requests (Origin header absent) and requests from our own host
+  if (origin && !origin.includes(req.get('Host'))) {
+    return res.status(403).json({ error: 'Cross-origin requests are not allowed.' });
+  }
+  next();
+});
 
 // API: Get top scores
 app.get('/api/scores', (req, res) => {
@@ -104,9 +145,8 @@ app.post('/api/scores', scoreSubmitLimiter, (req, res) => {
       }
     }
 
-    // Insert and prune
-    insertScore.run(sanitizedName, score);
-    pruneScores.run(MAX_SCORES);
+    // Insert and prune inside a transaction
+    insertAndPrune(sanitizedName, score);
 
     const scores = getTopScores.all(MAX_SCORES);
     res.status(201).json({ qualified: true, scores });
