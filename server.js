@@ -88,7 +88,9 @@ const insertAndRetain = db.transaction((name, score) => {
 // Middleware
 app.use(express.json({ limit: '1kb' }));
 
-// Rate limiting for score submissions (5 per minute per IP)
+// Rate limiting for score submissions:
+// - Burst limit: 5 requests per minute per IP
+// - Daily limit: 100 requests per day per IP
 const scoreSubmitLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 5,
@@ -97,20 +99,29 @@ const scoreSubmitLimiter = rateLimit({
   message: { error: 'Too many score submissions. Please try again later.' },
 });
 
+const scoreDailyLimiter = rateLimit({
+  windowMs: 24 * 60 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Daily submission limit reached. Please try again tomorrow.' },
+});
+
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Reject cross-origin API requests using strict origin equality
+// Reject cross-origin API requests:
+// 1. Explicit CORS policy — never send Access-Control-Allow-Origin, so
+//    browsers will block any cross-origin fetch/XHR response.
+// 2. Strict Origin check — if an Origin header is present, it must exactly
+//    match the expected scheme+host (no substring matching).
 app.use('/api', (req, res, next) => {
   const origin = req.get('Origin');
   if (!origin) {
-    // No Origin header means same-origin (non-CORS) request
+    // No Origin header means same-origin (non-CORS) request — allow
     return next();
   }
-  // Build the expected origin from the Host header
-  const proto = req.protocol; // 'http' or 'https'
-  const host = req.get('Host');
-  const expectedOrigin = proto + '://' + host;
+  const expectedOrigin = req.protocol + '://' + req.get('Host');
   if (origin !== expectedOrigin) {
     return res.status(403).json({ error: 'Cross-origin requests are not allowed.' });
   }
@@ -129,7 +140,7 @@ app.get('/api/scores', (req, res) => {
 });
 
 // API: Submit a score
-app.post('/api/scores', scoreSubmitLimiter, (req, res) => {
+app.post('/api/scores', scoreDailyLimiter, scoreSubmitLimiter, (req, res) => {
   try {
     const { name, score } = req.body;
 
