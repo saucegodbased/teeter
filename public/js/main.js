@@ -18,7 +18,7 @@ import {
 } from './renderer.js';
 
 import { initTracker, calibrate, detectTilt, detectPitch, detectMouthOpen, resetTilt } from './tracker.js';
-import { initPhysics, updatePhysics, resetBall, updateLevelData } from './physics.js';
+import { initPhysics, updatePhysics, resetBall, updateLevelData, setSensitivity, getSensitivity, DEFAULT_SENSITIVITY } from './physics.js';
 import { getPointAtDistance } from './track.js';
 
 const overlay = document.getElementById('overlay');
@@ -39,7 +39,14 @@ const slowdownIndicator = document.getElementById('slowdown-indicator');
 const boostIndicator = document.getElementById('boost-indicator');
 const levelEl = document.getElementById('level');
 const timerEl = document.getElementById('timer');
+const settingsBtn = document.getElementById('settings-btn');
+const settingsPanel = document.getElementById('settings-panel');
+const settingsClose = document.getElementById('settings-close');
+const sensitivitySlider = document.getElementById('sensitivity-slider');
+const sensitivityValue = document.getElementById('sensitivity-value');
+const sensitivityReset = document.getElementById('sensitivity-reset');
 
+const SENSITIVITY_STORAGE_KEY = 'teeter_sensitivity';
 const MAX_SCORES = 10;
 const NON_QUALIFYING_DELAY = 2000;
 const CHUNK_LENGTH = 20;
@@ -90,6 +97,59 @@ function resetLevel() {
   levelEl.textContent = 'Level 1';
   updateSceneColors(LEVEL_COLORS[0]);
 }
+
+// --- Sensitivity settings ---
+
+function getSensitivityLabel(val) {
+  if (val <= 11.5) return 'Low';
+  if (val <= 19.5) return 'Medium';
+  return 'High';
+}
+
+function updateSensitivityDisplay(val) {
+  sensitivityValue.textContent = parseFloat(val).toFixed(1) + ' (' + getSensitivityLabel(val) + ')';
+  sensitivitySlider.value = val;
+}
+
+function loadSensitivity() {
+  try {
+    const stored = localStorage.getItem(SENSITIVITY_STORAGE_KEY);
+    if (stored !== null) {
+      const val = parseFloat(stored);
+      if (!isNaN(val) && val >= 5 && val <= 30) {
+        setSensitivity(val);
+        updateSensitivityDisplay(val);
+        return;
+      }
+    }
+  } catch {}
+  setSensitivity(DEFAULT_SENSITIVITY);
+  updateSensitivityDisplay(DEFAULT_SENSITIVITY);
+}
+
+function saveSensitivity(val) {
+  try { localStorage.setItem(SENSITIVITY_STORAGE_KEY, String(val)); } catch {}
+}
+
+function showSettings() { settingsPanel.classList.add('visible'); }
+function hideSettings() { settingsPanel.classList.remove('visible'); }
+
+sensitivitySlider.addEventListener('input', () => {
+  const val = parseFloat(sensitivitySlider.value);
+  setSensitivity(val);
+  updateSensitivityDisplay(val);
+  saveSensitivity(val);
+});
+
+sensitivityReset.addEventListener('click', () => {
+  setSensitivity(DEFAULT_SENSITIVITY);
+  updateSensitivityDisplay(DEFAULT_SENSITIVITY);
+  saveSensitivity(DEFAULT_SENSITIVITY);
+});
+
+settingsBtn.addEventListener('click', () => { showSettings(); });
+settingsClose.addEventListener('click', () => { hideSettings(); });
+settingsPanel.addEventListener('click', (e) => { if (e.target === settingsPanel) hideSettings(); });
 
 // --- API-based leaderboard ---
 
@@ -348,11 +408,14 @@ async function init() {
     await initTracker(stream);
     calibrate(performance.now());
 
+    loadSensitivity();
+
     overlay.classList.add('hidden');
     scoreEl.style.display = 'block';
     levelEl.style.display = 'block';
     timerEl.style.display = 'block';
     leaderboardBtn.style.display = 'block';
+    settingsBtn.style.display = 'block';
     updateScore(0);
     gameStartTime = performance.now();
     state = 'playing';

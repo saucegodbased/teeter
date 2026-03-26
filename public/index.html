@@ -19,6 +19,7 @@
   <div id="level">Level 1</div>
   <div id="timer">00:00</div>
   <button id="leaderboard-btn">Leaderboard</button>
+  <button id="settings-btn">Settings</button>
   <div id="overlay">
     <div class="title">TEETER</div>
     <div class="subtitle">Loading...</div>
@@ -41,6 +42,24 @@
       <div class="lb-title">LEADERBOARD</div>
       <div id="leaderboard-list"></div>
       <button id="leaderboard-close">Close</button>
+    </div>
+  </div>
+  <div id="settings-panel">
+    <div id="settings-box">
+      <div class="settings-title">SETTINGS</div>
+      <div class="settings-row">
+        <label for="sensitivity-slider">Head Tilt Sensitivity</label>
+        <div class="settings-slider-wrap">
+          <span class="settings-label-low">Low</span>
+          <input type="range" id="sensitivity-slider" min="5" max="30" step="0.5" value="15">
+          <span class="settings-label-high">High</span>
+        </div>
+        <div id="sensitivity-value">15.0 (Medium)</div>
+      </div>
+      <div class="settings-actions">
+        <button id="sensitivity-reset">Reset to Default</button>
+        <button id="settings-close">Close</button>
+      </div>
     </div>
   </div>
   <div id="slowdown-indicator">SLOWED</div>

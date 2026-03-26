@@ -289,6 +289,118 @@ canvas { display: block; }
 #boost-indicator.visible {
   display: block;
 }
+/* Settings panel */
+#settings-btn {
+  position: fixed;
+  top: 16px;
+  right: 140px;
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 1em;
+  font-weight: 600;
+  z-index: 10;
+  background: rgba(0,0,0,0.4);
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.2);
+  cursor: pointer;
+  display: none;
+}
+#settings-btn:hover {
+  background: rgba(0,0,0,0.6);
+}
+#settings-panel {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 25;
+  background: rgba(0,0,0,0.7);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: #fff;
+}
+#settings-panel.visible {
+  display: flex;
+}
+#settings-box {
+  text-align: center;
+  background: rgba(0,0,0,0.8);
+  padding: 32px 40px;
+  border-radius: 16px;
+  min-width: 340px;
+}
+.settings-title {
+  font-size: 1.8em;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  margin-bottom: 24px;
+}
+.settings-row {
+  margin-bottom: 24px;
+}
+.settings-row label {
+  display: block;
+  font-size: 1.05em;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.settings-slider-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: center;
+}
+.settings-label-low,
+.settings-label-high {
+  font-size: 0.8em;
+  opacity: 0.6;
+  min-width: 30px;
+}
+#sensitivity-slider {
+  width: 200px;
+  cursor: pointer;
+  accent-color: #4a90d9;
+}
+#sensitivity-value {
+  margin-top: 8px;
+  font-size: 0.95em;
+  opacity: 0.8;
+}
+.settings-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+#sensitivity-reset {
+  font-size: 0.9em;
+  padding: 8px 20px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.3);
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 600;
+}
+#sensitivity-reset:hover {
+  background: rgba(255,255,255,0.1);
+}
+#settings-close {
+  font-size: 0.9em;
+  padding: 8px 20px;
+  border-radius: 8px;
+  border: none;
+  background: #4a90d9;
+  color: #fff;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 600;
+}
+#settings-close:hover {
+  background: #5aa0e9;
+}
+
 #version-info {
   position: fixed;
   bottom: 8px;
