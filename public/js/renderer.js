@@ -303,18 +303,26 @@ function buildChunk(chunkIndex) {
   chunks.set(chunkIndex, chunk);
 }
 
+function disposeMesh(mesh) {
+  if (mesh.geometry) mesh.geometry.dispose();
+  if (mesh.material) {
+    if (Array.isArray(mesh.material)) { mesh.material.forEach((m) => m.dispose()); }
+    else { mesh.material.dispose(); }
+  }
+}
+
 function destroyChunk(chunkIndex) {
   const chunk = chunks.get(chunkIndex);
   if (!chunk) return;
-  for (const m of chunk.trackMeshes) scene.remove(m);
-  for (const m of chunk.edgeMeshes) scene.remove(m);
-  for (const m of chunk.obstacleMeshes) scene.remove(m);
-  for (const e of chunk.coinEntries) scene.remove(e.mesh);
+  for (const m of chunk.trackMeshes) { disposeMesh(m); scene.remove(m); }
+  for (const m of chunk.edgeMeshes) { disposeMesh(m); scene.remove(m); }
+  for (const m of chunk.obstacleMeshes) { disposeMesh(m); scene.remove(m); }
+  for (const e of chunk.coinEntries) { disposeMesh(e.mesh); scene.remove(e.mesh); }
   for (const e of chunk.turtleEntries) {
     e.mesh.traverse((child) => { if (child.isMesh) { child.geometry.dispose(); child.material.dispose(); } });
     scene.remove(e.mesh);
   }
-  for (const e of chunk.movingWallEntries) scene.remove(e.mesh);
+  for (const e of chunk.movingWallEntries) { disposeMesh(e.mesh); scene.remove(e.mesh); }
   chunks.delete(chunkIndex);
 }
 
