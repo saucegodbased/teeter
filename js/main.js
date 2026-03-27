@@ -15,6 +15,7 @@ import {
   updateCoinRotation,
   updateSceneColors,
   updateMovingWalls,
+  updateChunks,
 } from './renderer.js';
 
 import { initTracker, calibrate, detectTilt, detectPitch, detectMouthOpen, resetTilt } from './tracker.js';
@@ -57,7 +58,6 @@ let score = 0;
 let finalScore = 0;
 let currentLevel = 1;
 let gameStartTime = 0;
-let finishTime = 0;
 
 function updateScore(value) {
   score = value;
@@ -139,32 +139,6 @@ function renderLeaderboard() {
 
 function showLeaderboard() { renderLeaderboard(); leaderboardPanel.classList.add('visible'); }
 function hideLeaderboard() { leaderboardPanel.classList.remove('visible'); }
-
-// --- Finish state ---
-
-function enterFinished(timestamp) {
-  finishTime = ((timestamp - gameStartTime) / 1000).toFixed(1);
-  finalScore = score;
-  state = 'finished';
-
-  gameoverTitle.textContent = 'FINISHED!';
-  gameoverScore.textContent = 'Score: ' + finalScore + '  |  Time: ' + finishTime + 's';
-
-  if (scoreQualifies(finalScore)) {
-    gameoverMessage.textContent = 'New high score!';
-    nameEntry.classList.add('visible');
-    nameInput.value = '';
-    nameInput.focus();
-  } else {
-    gameoverMessage.textContent = 'Great run!';
-    nameEntry.classList.remove('visible');
-    resetTimer = setTimeout(() => { exitGameOver(); }, NON_QUALIFYING_DELAY);
-  }
-
-  levelEl.style.display = 'none';
-  timerEl.style.display = 'none';
-  gameoverOverlay.classList.add('visible');
-}
 
 // --- Game over flow ---
 
@@ -303,6 +277,8 @@ function gameLoop(timestamp) {
     if (state === 'playing') {
       updateLevel(result.distance);
       updateTimer(timestamp);
+      // Generate new track chunks and cull old ones
+      updateChunks(result.distance);
     }
 
     updateBallPosition(result.x, result.y, result.z);
@@ -326,12 +302,7 @@ function gameLoop(timestamp) {
     if (result.boostActive) { boostIndicator.classList.add('visible'); }
     else { boostIndicator.classList.remove('visible'); }
 
-    // Handle finish
-    if (result.finished && state === 'playing') {
-      enterFinished(timestamp);
-    }
-
-    // Handle falling
+    // Handle falling — game over only when ball falls off track
     if (result.falling && state === 'playing') { state = 'falling'; }
     if (result.needsReset && state === 'falling') { enterGameOver(); }
   }
