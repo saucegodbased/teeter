@@ -21,11 +21,11 @@ const MAX_RETAINED_SCORES = parseInt(process.env.MAX_RETAINED_SCORES, 10) || 100
 const MAX_REASONABLE_SCORE = 10000;
 const MAX_NAME_LENGTH = 15;
 
-// Security headers — no inline scripts or styles; everything is in external files
+// Security headers — inline importmap allowed via hash; everything else in external files
 app.use((req, res, next) => {
   res.setHeader('Content-Security-Policy',
     "default-src 'self'; " +
-    "script-src 'self' https://cdn.jsdelivr.net; " +
+    "script-src 'self' https://cdn.jsdelivr.net 'sha256-Cb7VRvgKHYvwTusy6WvuTr1ww8fUTjYTnEACYzG5a/8='; " +
     "style-src 'self'; " +
     "connect-src 'self' https://cdn.jsdelivr.net https://storage.googleapis.com; " +
     "worker-src 'self' blob:; " +
