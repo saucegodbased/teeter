@@ -303,26 +303,44 @@ function buildChunk(chunkIndex) {
   chunks.set(chunkIndex, chunk);
 }
 
-function disposeMesh(mesh) {
-  if (mesh.geometry) mesh.geometry.dispose();
-  if (mesh.material) {
-    if (Array.isArray(mesh.material)) { mesh.material.forEach((m) => m.dispose()); }
-    else { mesh.material.dispose(); }
-  }
+// Shared geometry/material refs used across chunks — these must NOT be disposed
+// during chunk teardown. Only per-instance resources (turtle meshes) are disposed.
+const sharedGeometries = new Set();
+const sharedMaterials = new Set();
+
+function registerSharedResources() {
+  sharedGeometries.add(segGeo);
+  sharedGeometries.add(edgeGeo);
+  sharedGeometries.add(obstGeo);
+  sharedGeometries.add(movingWallGeo);
+  sharedGeometries.add(coinGeo);
+  sharedMaterials.add(trackMat);
+  sharedMaterials.add(edgeMat);
+  sharedMaterials.add(obstMat);
+  sharedMaterials.add(movingWallMat);
+  sharedMaterials.add(coinMat);
 }
+registerSharedResources();
 
 function destroyChunk(chunkIndex) {
   const chunk = chunks.get(chunkIndex);
   if (!chunk) return;
-  for (const m of chunk.trackMeshes) { disposeMesh(m); scene.remove(m); }
-  for (const m of chunk.edgeMeshes) { disposeMesh(m); scene.remove(m); }
-  for (const m of chunk.obstacleMeshes) { disposeMesh(m); scene.remove(m); }
-  for (const e of chunk.coinEntries) { disposeMesh(e.mesh); scene.remove(e.mesh); }
+  // Track, edge, obstacle, coin, and moving wall meshes use shared geo/mat — just remove from scene
+  for (const m of chunk.trackMeshes) scene.remove(m);
+  for (const m of chunk.edgeMeshes) scene.remove(m);
+  for (const m of chunk.obstacleMeshes) scene.remove(m);
+  for (const e of chunk.coinEntries) scene.remove(e.mesh);
+  // Turtle meshes create per-instance geo/mat — dispose them to free GPU memory
   for (const e of chunk.turtleEntries) {
-    e.mesh.traverse((child) => { if (child.isMesh) { child.geometry.dispose(); child.material.dispose(); } });
+    e.mesh.traverse((child) => {
+      if (child.isMesh) {
+        if (!sharedGeometries.has(child.geometry)) child.geometry.dispose();
+        if (!sharedMaterials.has(child.material)) child.material.dispose();
+      }
+    });
     scene.remove(e.mesh);
   }
-  for (const e of chunk.movingWallEntries) { disposeMesh(e.mesh); scene.remove(e.mesh); }
+  for (const e of chunk.movingWallEntries) scene.remove(e.mesh);
   chunks.delete(chunkIndex);
 }
 
